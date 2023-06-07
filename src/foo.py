@@ -19,12 +19,23 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 
 
+# get the tank image
+
+
 class Tank(pygame.sprite.Sprite):
-    def __init__(self, screen):
+    @classmethod
+    def load_image(cls, fn):
+        """Load a sprite image to be used in tank instantances."""
+        img = pygame.image.load(fn)
+        return img.convert_alpha()
+
+    def __init__(self, screen, img):
         super(Tank, self).__init__()
-        self.surf = pygame.Surface((75, 25))
-        self.surf.fill((255, 255, 255))
-        self.rect = self.surf.get_rect()
+        self.image = img
+        self.rect = img.get_rect(center=(50, 50))
+        # self.surf = pygame.Surface((75, 25))
+        # self.surf.fill((255, 255, 255))
+        # self.rect = self.surf.get_rect()
         self.screen = screen
 
     def update(self, pressed_keys):
@@ -75,7 +86,9 @@ fake_screen = screen.copy()
 ADDENEMY = pygame.USEREVENT + 1
 pygame.time.set_timer(ADDENEMY, 250)
 
-tank = Tank(screen)
+i = Tank.load_image("../assets/Modern_Tank_Pack1.png")
+
+tank = Tank(screen, i)
 enemies = pygame.sprite.Group()
 all_sprites = pygame.sprite.Group()
 all_sprites.add(tank)
@@ -113,12 +126,12 @@ while running:
     tank.update(pygame.key.get_pressed())
     enemies.update()
 
-    for e in all_sprites:
-        fake_screen.blit(e.surf, e.rect)
+    # for e in all_sprites:
+    fake_screen.blit(tank.image, tank.rect)
 
-    if pygame.sprite.spritecollideany(tank, enemies):
-        tank.kill()
-        running = False
+    # if pygame.sprite.spritecollideany(tank, enemies):
+    #     tank.kill()
+    #     running = False
 
     screen.blit(pygame.transform.scale(
         fake_screen, screen.get_rect().size), (0, 0))
