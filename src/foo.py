@@ -2,7 +2,6 @@
 # https://realpython.com/pygame-a-primer/
 
 import pygame
-import random
 
 from pygame.locals import (
     K_UP,
@@ -11,6 +10,8 @@ from pygame.locals import (
     K_RIGHT,
     K_ESCAPE,
     KEYDOWN,
+    K_r,
+    K_t,
     #     QUIT,
 )
 
@@ -22,6 +23,45 @@ SCREEN_HEIGHT = 600
 # get the tank image
 
 
+def rot_center(image, angle, x, y):
+    rotated_image = pygame.transform.rotate(image, angle)
+    new_rect = rotated_image.get_rect(center=image.get_rect(center=(x, y)).center)
+
+    return rotated_image, new_rect
+
+
+def rot_center2(image, angle):
+    """rotate an image while keeping its center and size"""
+    orig_rect = image.get_rect()
+    rot_image = pygame.transform.rotate(image, angle)
+    rot_rect = orig_rect.copy()
+    rot_rect.center = rot_image.get_rect().center
+    rot_image = rot_image.subsurface(rot_rect).copy()
+    return rot_image
+
+
+def rot_center3(image, angle):
+    """rotate an image while keeping its center and size"""
+    pos = image.get_rect().center
+
+    w, h = image.get_size()
+    box = [pygame.math.Vector2(p) for p in [(0, 0), (w, 0), (w, -h), (0, -h)]]
+    box_rotate = [p.rotate(angle) for p in box]
+    min_box = (
+        min(box_rotate, key=lambda p: p[0])[0],
+        min(box_rotate, key=lambda p: p[1])[1],
+    )
+    max_box = (
+        max(box_rotate, key=lambda p: p[0])[0],
+        max(box_rotate, key=lambda p: p[1])[1],
+    )
+
+    origin = pygame.math.Vector2(pos[0] + min_box[0], pos[1] - max_box[1])
+    rotated_image = pygame.transform.rotate(image, angle)
+
+    return rotated_image, origin
+
+
 class Tank(pygame.sprite.Sprite):
     @classmethod
     def load_image(cls, fn):
@@ -29,70 +69,54 @@ class Tank(pygame.sprite.Sprite):
         img = pygame.image.load(fn)
         return img.convert_alpha()
 
-    def __init__(self, screen, img):
+    def __init__(self, body, gun):
         super(Tank, self).__init__()
-        self.image = img
-        self.rect = img.get_rect(center=(50, 50))
-        # self.surf = pygame.Surface((75, 25))
-        # self.surf.fill((255, 255, 255))
-        # self.rect = self.surf.get_rect()
-        self.screen = screen
+        self.body = body
+        self.body_orig = body.copy()
+        self.gun = gun
+        self.gun_orig = gun.copy()
+        self.gun_offset = pygame.math.Vector2(0, 0)
+        self.pos = pygame.math.Vector2(100, 100)
+        self.body_angle = 0
+        self.gun_angle = 0
 
     def update(self, pressed_keys):
         if pressed_keys[K_UP]:
-            self.rect.move_ip(0, -5)
+            self.pos.y -= 5
         if pressed_keys[K_DOWN]:
-            self.rect.move_ip(0, 5)
+            self.pos.y += 5
         if pressed_keys[K_LEFT]:
-            self.rect.move_ip(-5, 0)
+            self.pos.x -= 5
         if pressed_keys[K_RIGHT]:
-            self.rect.move_ip(5, 0)
+            self.pos.x += 5
+        if pressed_keys[K_r]:
+            self.body_angle += 1
+            self.body = pygame.transform.rotate(self.body_orig, self.body_angle)
+        if pressed_keys[K_t]:
+            self.gun_angle += 1
+            self.gun = pygame.transform.rotate(self.gun_orig, self.gun_angle)
 
-        self.rect.left = max(0, self.rect.left)
-        self.rect.right = min(800, self.rect.right)
-        self.rect.top = max(0, self.rect.top)
-        self.rect.bottom = min(600, self.rect.bottom)
-
-
-class Enemy(pygame.sprite.Sprite):
-    def __init__(self):
-        super(Enemy, self).__init__()
-        self.surf = pygame.Surface((20, 10))
-        self.surf.fill((255, 255, 255))
-        self.rect = self.surf.get_rect(
-            center=(
-                random.randint(SCREEN_WIDTH + 20, SCREEN_WIDTH + 100),
-                random.randint(0, SCREEN_HEIGHT),
-            )
-        )
-        self.speed = random.randint(5, 20)
-
-    # Move the sprite based on speed
-    # Remove the sprite when it passes the left edge of the screen
-    def update(self):
-        self.rect.move_ip(-self.speed, 0)
-        if self.rect.right < 0:
-            self.kill()
+    def draw(self, sur):
+        sur.blit(self.body, self.pos - self.body.get_rect().center)
+        sur.blit(self.gun, self.gun_offset + self.pos - self.gun.get_rect().center)
 
 
 pygame.init()
 
 # Create the screen object
 # The size is determined by the constant SCREEN_WIDTH and SCREEN_HEIGHT
-screen = pygame.display.set_mode(
-    (800, 600), pygame.DOUBLEBUF | pygame.RESIZABLE)
+screen = pygame.display.set_mode((800, 600), pygame.DOUBLEBUF | pygame.RESIZABLE)
 fake_screen = screen.copy()
 
-ADDENEMY = pygame.USEREVENT + 1
-pygame.time.set_timer(ADDENEMY, 250)
-
-i = Tank.load_image("../assets/Modern_Tank_Pack1.png")
-
-tank = Tank(screen, i)
-enemies = pygame.sprite.Group()
-all_sprites = pygame.sprite.Group()
-all_sprites.add(tank)
-
+b = Tank.load_image("../assets/tanks/basic_body.png")
+b = pygame.transform.smoothscale(
+    b, (int(0.5 * b.get_rect().width), int(0.5 * b.get_rect().height))
+)
+g = Tank.load_image("../assets/tanks/basic_gun.png")
+g = pygame.transform.smoothscale(
+    g, (int(0.5 * g.get_rect().width), int(0.5 * g.get_rect().height))
+)
+tank = Tank(b, g)
 clock = pygame.time.Clock()
 
 # Run until the user asks to quit
@@ -112,29 +136,28 @@ while running:
             if event.key == K_ESCAPE:
                 running = False
 
-        elif event.type == ADDENEMY:
-            ne = Enemy()
-            enemies.add(ne)
-            all_sprites.add(ne)
-
     # Fill the background with black
     fake_screen.fill((0, 0, 0))
 
-    # Draw a solid blue circle in the center
-    pygame.draw.circle(fake_screen, (0, 0, 255), (550, 550), 45)
-
+    pygame.draw.rect(fake_screen, (0, 0, 255), (0, 0, 100, 100))
     tank.update(pygame.key.get_pressed())
-    enemies.update()
 
-    # for e in all_sprites:
-    fake_screen.blit(tank.image, tank.rect)
+    tank.draw(fake_screen)
 
-    # if pygame.sprite.spritecollideany(tank, enemies):
-    #     tank.kill()
-    #     running = False
+    # # for e in all_sprites:
+    # # fake_screen.blit(tank.image, tank.location)
+    # x, y = tank.image.get_rect().center
+    # fake_screen.blit(tank.image, (100 - x, 100 - y))
 
-    screen.blit(pygame.transform.scale(
-        fake_screen, screen.get_rect().size), (0, 0))
+    # rotated_image = pygame.transform.rotate(tank.image, 45)
+    # x, y = rotated_image.get_rect().center
+    # fake_screen.blit(rotated_image, (100 - x, 100 - y))
+
+    # rotated_image = pygame.transform.rotate(tank.image, 20)
+    # x, y = rotated_image.get_rect().center
+    # fake_screen.blit(rotated_image, (100 - x, 100 - y))
+
+    screen.blit(pygame.transform.scale(fake_screen, screen.get_rect().size), (0, 0))
 
     clock.tick(60)
     # Flip the display
