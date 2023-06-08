@@ -71,12 +71,21 @@ class Tank(pygame.sprite.Sprite):
 
     def __init__(self, body, gun):
         super(Tank, self).__init__()
+
+        # start tank here, probably should be an argument
+        self.pos = pygame.math.Vector2(100, 100)
+
+        # keep original images because rotation is lossey
         self.body = body
         self.body_orig = body.copy()
         self.gun = gun
         self.gun_orig = gun.copy()
-        self.gun_offset = pygame.math.Vector2(0, 0)
-        self.pos = pygame.math.Vector2(100, 100)
+
+        # pivot relative to top left of tank body image body.  The 0.75 should
+        # be a parameter of the tank definition.
+        self.gpivot = pygame.math.Vector2(gun.get_width() / 2, gun.get_height() * 0.75)
+
+        # start facing north
         self.body_angle = 0
         self.gun_angle = 0
 
@@ -94,11 +103,29 @@ class Tank(pygame.sprite.Sprite):
             self.body = pygame.transform.rotate(self.body_orig, self.body_angle)
         if pressed_keys[K_t]:
             self.gun_angle += 1
-            self.gun = pygame.transform.rotate(self.gun_orig, self.gun_angle)
 
     def draw(self, sur):
         sur.blit(self.body, self.pos - self.body.get_rect().center)
-        sur.blit(self.gun, self.gun_offset + self.pos - self.gun.get_rect().center)
+
+        # offset from pivot to center
+        image_rect = self.gun_orig.get_rect(topleft=self.pos - self.gpivot)
+        offset_center_to_pivot = self.pos - image_rect.center
+
+        # roatated offset from pivot to center
+        rotated_offset = offset_center_to_pivot.rotate(
+            -(self.gun_angle + self.body_angle)
+        )
+
+        rotated_image_center = self.pos - rotated_offset
+
+        # get a rotated image
+        rotated_image = pygame.transform.rotate(
+            self.gun_orig, self.gun_angle + self.body_angle
+        )
+        rotated_image_rect = rotated_image.get_rect(center=rotated_image_center)
+
+        # rotate and blit the image
+        sur.blit(rotated_image, rotated_image_rect.topleft)
 
 
 pygame.init()
@@ -143,6 +170,7 @@ while running:
     tank.update(pygame.key.get_pressed())
 
     tank.draw(fake_screen)
+    # pygame.draw.rect(fake_screen, (0, 0, 255), (0, 0, 200, 200))
 
     # # for e in all_sprites:
     # # fake_screen.blit(tank.image, tank.location)
