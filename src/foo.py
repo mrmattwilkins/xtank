@@ -1,17 +1,19 @@
 #!/usr/bin/python3
 # https://realpython.com/pygame-a-primer/
 
+import math
 import pygame
+import pygame.freetype
 
 from pygame.locals import (
-    K_UP,
-    K_DOWN,
-    K_LEFT,
-    K_RIGHT,
     K_ESCAPE,
     KEYDOWN,
-    K_r,
-    K_t,
+    K_f,
+    K_d,
+    K_j,
+    K_k,
+    K_s,
+    K_l,
     #     QUIT,
 )
 
@@ -23,45 +25,6 @@ SCREEN_HEIGHT = 600
 # get the tank image
 
 
-def rot_center(image, angle, x, y):
-    rotated_image = pygame.transform.rotate(image, angle)
-    new_rect = rotated_image.get_rect(center=image.get_rect(center=(x, y)).center)
-
-    return rotated_image, new_rect
-
-
-def rot_center2(image, angle):
-    """rotate an image while keeping its center and size"""
-    orig_rect = image.get_rect()
-    rot_image = pygame.transform.rotate(image, angle)
-    rot_rect = orig_rect.copy()
-    rot_rect.center = rot_image.get_rect().center
-    rot_image = rot_image.subsurface(rot_rect).copy()
-    return rot_image
-
-
-def rot_center3(image, angle):
-    """rotate an image while keeping its center and size"""
-    pos = image.get_rect().center
-
-    w, h = image.get_size()
-    box = [pygame.math.Vector2(p) for p in [(0, 0), (w, 0), (w, -h), (0, -h)]]
-    box_rotate = [p.rotate(angle) for p in box]
-    min_box = (
-        min(box_rotate, key=lambda p: p[0])[0],
-        min(box_rotate, key=lambda p: p[1])[1],
-    )
-    max_box = (
-        max(box_rotate, key=lambda p: p[0])[0],
-        max(box_rotate, key=lambda p: p[1])[1],
-    )
-
-    origin = pygame.math.Vector2(pos[0] + min_box[0], pos[1] - max_box[1])
-    rotated_image = pygame.transform.rotate(image, angle)
-
-    return rotated_image, origin
-
-
 class Tank(pygame.sprite.Sprite):
     @classmethod
     def load_image(cls, fn):
@@ -71,6 +34,9 @@ class Tank(pygame.sprite.Sprite):
 
     def __init__(self, body, gun):
         super(Tank, self).__init__()
+
+        self.mass = 4
+        self.friction = 10
 
         # start tank here, probably should be an argument
         self.pos = pygame.math.Vector2(100, 100)
@@ -85,23 +51,76 @@ class Tank(pygame.sprite.Sprite):
         # be a parameter of the tank definition.
         self.gpivot = pygame.math.Vector2(gun.get_width() / 2, gun.get_height() * 0.75)
 
-        # start facing north
+        # start facing north, 90 is east
         self.body_angle = 0
         self.gun_angle = 0
 
+        # start out zero velocity and torque
+        # we have a bunch of torque vs velocity curves.  Depending on power
+        self.vel = [0, 0]
+        self.torque = [0, 0]
+        self.power = [0, 0]
+        # power goes from -300 to 300 say.  Let
+        #
+        #  T = -v + power if power >= 0
+        #  T = -v - power if power <= 0
+        #
+        # and limit
+        # Using T = ma, we get the acceleration, so can modify the velocity
+        # using
+        #
+        #  vnew = vold + a dt
+        #       = vold + (T/m) dt
+
     def update(self, pressed_keys):
-        if pressed_keys[K_UP]:
-            self.pos.y -= 5
-        if pressed_keys[K_DOWN]:
-            self.pos.y += 5
-        if pressed_keys[K_LEFT]:
-            self.pos.x -= 5
-        if pressed_keys[K_RIGHT]:
-            self.pos.x += 5
-        if pressed_keys[K_r]:
-            self.body_angle += 1
-            self.body = pygame.transform.rotate(self.body_orig, self.body_angle)
-        if pressed_keys[K_t]:
+        if pressed_keys[K_f]:
+            self.power[0] += 2
+        elif pressed_keys[K_d]:
+            self.power[0] -= 2
+        else:  # no f or d, so just reduce the power
+            if self.power[0] < 0:
+                self.power[0] += 4
+            elif self.power[0] > 0:
+                self.power[0] -= 4
+
+        if pressed_keys[K_j]:
+            self.power[1] += 2
+        elif pressed_keys[K_k]:
+            self.power[1] -= 2
+        else:  # no j or k, so just reduce the power
+            if self.power[1] < 0:
+                self.power[1] += 4
+            elif self.power[1] > 0:
+                self.power[1] -= 4
+
+        for i in 0, 1:
+            self.power[i] = min(100, max(-100, self.power[i]))
+
+        for i in 0, 1:
+            self.torque[i] = self.power[i]  # - self.vel[i]
+
+        # for i in 0, 1:
+        #     if self.power[i] > 0:
+        #         self.torque[i] = min(self.power[i], max(0, self.torque[i]))
+        #     else:
+        #         self.torque[i] = min(0, max(self.power[i], self.torque[i]))
+
+        for i in 0, 1:
+            force = self.torque[i] - self.friction * self.vel[i]
+            self.vel[i] += force / self.mass * dt
+
+        # the difference in left and right velocities rotates body
+        self.body_angle += (self.vel[0] - self.vel[1]) / 10
+        self.body = pygame.transform.rotate(self.body_orig, -self.body_angle)
+
+        # move the average of our velocities in the angle direction
+        vel = (self.vel[0] + self.vel[1]) / 2
+        self.pos.x += vel * math.sin(math.radians(self.body_angle))
+        self.pos.y -= vel * math.cos(math.radians(self.body_angle))
+
+        if pressed_keys[K_s]:
+            self.gun_angle -= 1
+        if pressed_keys[K_l]:
             self.gun_angle += 1
 
     def draw(self, sur):
@@ -113,14 +132,14 @@ class Tank(pygame.sprite.Sprite):
 
         # roatated offset from pivot to center
         rotated_offset = offset_center_to_pivot.rotate(
-            -(self.gun_angle + self.body_angle)
+            (self.gun_angle + self.body_angle)
         )
 
         rotated_image_center = self.pos - rotated_offset
 
         # get a rotated image
         rotated_image = pygame.transform.rotate(
-            self.gun_orig, self.gun_angle + self.body_angle
+            self.gun_orig, -(self.gun_angle + self.body_angle)
         )
         rotated_image_rect = rotated_image.get_rect(center=rotated_image_center)
 
@@ -129,6 +148,7 @@ class Tank(pygame.sprite.Sprite):
 
 
 pygame.init()
+my_font = pygame.freetype.SysFont("arial", 30)
 
 # Create the screen object
 # The size is determined by the constant SCREEN_WIDTH and SCREEN_HEIGHT
@@ -145,6 +165,7 @@ g = pygame.transform.smoothscale(
 )
 tank = Tank(b, g)
 clock = pygame.time.Clock()
+dt = 1 / 60
 
 # Run until the user asks to quit
 running = True
@@ -184,6 +205,31 @@ while running:
     # rotated_image = pygame.transform.rotate(tank.image, 20)
     # x, y = rotated_image.get_rect().center
     # fake_screen.blit(rotated_image, (100 - x, 100 - y))
+
+    my_font.render_to(
+        fake_screen,
+        (400, 400),
+        f"P: {tank.power[0]:3d}, {tank.power[1]:3d}",
+        fgcolor=(255, 255, 255),
+    )
+    my_font.render_to(
+        fake_screen,
+        (400, 450),
+        f"T: {int(tank.torque[0]):3d}, {int(tank.torque[1]):3d}",
+        fgcolor=(255, 255, 255),
+    )
+    my_font.render_to(
+        fake_screen,
+        (400, 500),
+        f"V: {int(tank.vel[0]):3d}, {int(tank.vel[1]):3d}",
+        fgcolor=(255, 255, 255),
+    )
+    my_font.render_to(
+        fake_screen,
+        (400, 550),
+        f"Angle: {int(tank.body_angle):3d}",
+        fgcolor=(255, 255, 255),
+    )
 
     screen.blit(pygame.transform.scale(fake_screen, screen.get_rect().size), (0, 0))
 
